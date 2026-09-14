@@ -1,58 +1,51 @@
 <?php
 
+declare(strict_types=1);
+
 namespace AppleSignIn;
 
-use Exception;
-use Firebase\JWT\JWK;
-use Firebase\JWT\JWT;
-use GuzzleHttp\Client;
-use GuzzleHttp\Exception\GuzzleException;
-
 /**
- * Decode Sign In with Apple identity token, and produce an ASPayload for
- * utilizing in backend auth flows to verify validity of provided user creds.
+ * Backward-compatible entry point for code written against v1/v2 of this
+ * library. New code should use {@see AppleSignInDecoder} directly.
  *
- * @package  AppleSignIn\ASDecoder
- * @author   Griffin Ledingham <gcledingham@gmail.com>
- * @license  http://opensource.org/licenses/BSD-3-Clause 3-clause BSD
- * @link     https://github.com/GriffinLedingham/php-apple-signin
+ * @deprecated use AppleSignIn\AppleSignInDecoder
  */
 class ASDecoder
 {
+    /**
+     * Optional raw JSON payload of https://appleid.apple.com/auth/keys.
+     * Populate it to avoid an HTTP request (cache hook); after decoding it
+     * holds the keys fetched from Apple.
+     */
+    public static string $responseKeys = '';
 
     /**
-     * Cache Hook
-     * @var string curl response
+     * @throws Exception\AppleSignInException
      */
-    public static $responseKeys = "";
-
-    /**
-     * Parse a provided Sign In with Apple identity token.
-     *
-     * @param string $identityToken
-     * @return object|null
-     * @throws Exception|GuzzleException
-     */
-    public static function getAppleSignInPayload($identityToken)
+    public static function getAppleSignInPayload(string $identityToken): ASPayload
     {
-        return new ASPayload(JWT::decode($identityToken, self::fetchPublicKey()));
+        $provider = self::$responseKeys !== ''
+            ? new StaticPublicKeyProvider(self::$responseKeys)
+            : new ApplePublicKeyProvider();
+
+        $payload = new ASPayload((new AppleSignInDecoder($provider))->decode($identityToken));
+
+        // Keep the legacy cache hook populated after a live fetch.
+        if ($provider instanceof ApplePublicKeyProvider && $provider->getRawKeys() !== null) {
+            self::$responseKeys = $provider->getRawKeys();
+        }
+
+        return $payload;
     }
 
     /**
-     * Fetch Apple's public key from the auth/keys REST API to use to decode
-     * the Sign In JWT.
+     * @return array<string, \Firebase\JWT\Key>
      *
-     * @return array
-     * @throws Exception
-     * @throws GuzzleException
+     * @throws Exception\AppleSignInException
+     * @deprecated inject a PublicKeyProvider into AppleSignInDecoder instead.
      */
-    public static function fetchPublicKey()
+    public static function fetchPublicKey(): array
     {
-        if (!self::$responseKeys) {
-            $ch = new Client();
-            self::$responseKeys  = $ch->get('https://appleid.apple.com/auth/keys')->getBody()->getContents();
-        }
-        return JWK::parseKeySet(json_decode(self::$responseKeys, true));
+        return (new ApplePublicKeyProvider())->getKeySet();
     }
 }
-

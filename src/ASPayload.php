@@ -1,52 +1,63 @@
 <?php
 
+declare(strict_types=1);
+
 namespace AppleSignIn;
 
-use Exception;
+use AppleSignIn\Exception\AppleSignInException;
 
 /**
- * A class decorator for the Sign In with Apple payload produced by
- * decoding the signed JWT from a client.
+ * Backward-compatible decorator around {@see IdentityToken}. New code should
+ * type-hint against IdentityToken directly.
+ *
+ * @deprecated use AppleSignIn\IdentityToken
  */
 class ASPayload
 {
-    protected $_instance;
-
-    public function __construct($instance)
+    public function __construct(private readonly IdentityToken $token)
     {
-        if (is_null($instance)) {
-            throw new Exception('ASPayload received null instance.');
-        }
-        $this->_instance = $instance;
     }
 
-    public function __call($method, $args)
+    public function getEmail(): ?string
     {
-        return call_user_func_array(array($this->_instance, $method), $args);
+        return $this->token->getEmail();
     }
 
-    public function __get($key)
+    public function getUser(): string
     {
-        return (isset($this->_instance->$key)) ? $this->_instance->$key : null;
+        return $this->token->getUser();
     }
 
-    public function __set($key, $val)
+    public function verifyUser(string $user): bool
     {
-        return $this->_instance->$key = $val;
+        return $this->token->verifyUser($user);
     }
 
-    public function getEmail()
+    public function getToken(): IdentityToken
     {
-        return (isset($this->_instance->email)) ? $this->_instance->email : null;
+        return $this->token;
     }
 
-    public function getUser()
+    /**
+     * @return mixed
+     */
+    public function __get(string $name)
     {
-        return (isset($this->_instance->sub)) ? $this->_instance->sub : null;
+        return $this->token->getClaim($name);
     }
 
-    public function verifyUser($user)
+    public function __set(string $name, mixed $value): void
     {
-        return $user === $this->getUser();
+        throw new AppleSignInException(sprintf('Claim "%s" is read-only.', $name));
+    }
+
+    /**
+     * @param array<int, mixed> $arguments
+     *
+     * @return mixed
+     */
+    public function __call(string $method, array $arguments)
+    {
+        return $this->token->{$method}(...$arguments);
     }
 }

@@ -3,3 +3,7 @@
 
 # composer vendor
 vendor
+
+# phpunit
+.phpunit.result.cache
+
